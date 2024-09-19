@@ -1,0 +1,64 @@
+pipeline {
+    agent any
+
+    tools {
+        jdk 'jdk17'
+        nodejs 'node16'
+    }
+    
+    environment {
+        SLACK_CHANNEL = '#dev' // Change to your Slack channel
+        SLACK_COLOR_SUCCESS = '#36a64f'
+        SLACK_COLOR_FAILURE = '#ff0000'
+        SLACK_COLOR_UNSTABLE = '#f39c12'
+    }
+    
+    stages {
+        stage('Clean Workspace') {
+            steps {
+                cleanWs()
+            }
+        }
+        stage('Checkout from Git') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Jeffersonrhymes/deployment-of-youtube'
+            }
+        }
+        stage('Install Dependencies') {
+            steps {
+                sh "npm install"
+            }
+        }
+        stage('Docker Build & Push') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker', toolName: 'docker') {   
+                        sh "docker build -t youtube-clone ."
+                        sh "docker tag youtube-clone jeffersonrhymes/youtube-clone:latest"
+                        sh "docker push jeffersonrhymes/youtube-clone:latest"
+                    }
+                }
+            }
+        }
+        stage('Deploy to Container') {
+            steps {
+                sh 'docker run -d --name youtube-clone -p 3000:3000 jeffersonrhymes/youtube-clone:latest'
+            }
+        }
+    } // End of stages block
+
+    post { // This block should be here, directly after the stages block
+        success {
+            slackSend(channel: SLACK_CHANNEL, color: SLACK_COLOR_SUCCESS, message: "Build Successful: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' succeeded!")
+        }
+        unstable {
+            slackSend(channel: SLACK_CHANNEL, color: SLACK_COLOR_UNSTABLE, message: "Build Unstable: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' has unstable results.")
+        }
+        failure {
+            slackSend(channel: SLACK_CHANNEL, color: SLACK_COLOR_FAILURE, message: "Build Failed: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' failed.")
+        }
+        always {
+            slackSend(channel: SLACK_CHANNEL, color: '#0000ff', message: "Build Finished: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' completed.")
+        }
+    } // End of post block
+}
